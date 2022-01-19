@@ -7,6 +7,7 @@ import {
   InputType,
   Mutation,
   ObjectType,
+  Query,
   Resolver,
 } from "type-graphql";
 import argon2 from "argon2";
@@ -31,13 +32,19 @@ class FieldError {
 class UserResponse {
   @Field(() => [FieldError], { nullable: true })
   errors?: FieldError[];
+
   @Field(() => User, { nullable: true })
   user?: User;
 }
 
 @Resolver()
 export class UserResolver {
-  @Mutation(() => User)
+  @Query(() => [User])
+  users(@Ctx() { em }: MyContext): Promise<User[]> {
+    return em.find(User, {});
+  }
+
+  @Mutation(() => UserResponse)
   async register(
     @Arg("options") options: UsernamePasswordInput,
     @Ctx() { em }: MyContext
@@ -58,7 +65,7 @@ export class UserResolver {
         errors: [
           {
             field: "password",
-            message: "length must be greater than 2 character",
+            message: "length must be greater than 3 character",
           },
         ],
       };
@@ -69,7 +76,20 @@ export class UserResolver {
       username: options.username,
       password: hashedPassword,
     });
-    await em.persistAndFlush(user);
+    try {
+      await em.persistAndFlush(user);
+    } catch (err) {
+      if (err.code === "23505") {
+        return {
+          errors: [
+            {
+              field: "username",
+              message: "username already taken",
+            },
+          ],
+        };
+      }
+    }
     return { user };
   }
 
